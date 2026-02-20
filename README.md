@@ -24,10 +24,10 @@ node dist/index.js
 
 Generated files:
 
-- `<outputDir>/server/wg0.conf`
-- `<outputDir>/peers/peerN/peerN.conf`
-- `<outputDir>/root.key`
-- `<outputDir>/server.json`
+- `<outputDir>/config/wg0.conf`
+- `<outputDir>/config/peers/peerN.conf`
+- `<outputDir>/config/state/root.key`
+- `<outputDir>/config/state/server.json`
 
 ## Quality checks
 

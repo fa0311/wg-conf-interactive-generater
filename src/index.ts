@@ -10,29 +10,29 @@ import { renderPeerConfig, renderServerConfig } from "./render.js";
 export const main = async (): Promise<void> => {
 	p.intro(pc.cyan("wg-conf-wizard"));
 
-	const outputDir = await textPrompt({
-		message: "Output directory",
+	const baseDir = await textPrompt({
+		message: "Base output directory (a `config/` folder will be created)",
 		defaultValue: "./generated",
 		validate: z.string().min(1).parse,
 	});
-	if (p.isCancel(outputDir)) {
+	if (p.isCancel(baseDir)) {
 		return;
 	}
 
-	const artifactPaths = createArtifactPaths(outputDir);
+	const artifactPaths = createArtifactPaths(baseDir);
 
-	const persistedState = await (async () => {
+	const state = await (async () => {
 		try {
-			const state = await artifactPaths.readState();
-			return persistedStateSchema.parse(state);
+			const data = await artifactPaths.readState();
+			return persistedStateSchema.parse(data);
 		} catch (_) {
 			return undefined;
 		}
 	})();
 
 	const serverAddressCidr = await textPrompt({
-		message: "Server Address CIDR",
-		defaultValue: persistedState?.serverAddressCidr ?? "10.8.0.1/24",
+		message: "Server address (CIDR)",
+		defaultValue: state?.serverAddressCidr ?? "10.8.0.1/24",
 		validate: (e) => cidrParser(z.cidrv4().parse(e)),
 	});
 	if (p.isCancel(serverAddressCidr)) {
@@ -40,8 +40,8 @@ export const main = async (): Promise<void> => {
 	}
 
 	const serverListenPort = await textPrompt({
-		message: "Server ListenPort",
-		defaultValue: String(persistedState?.serverListenPort ?? "51820"),
+		message: "Server listen port",
+		defaultValue: String(state?.serverListenPort ?? "51820"),
 		validate: z.coerce.number().min(1).max(65535).parse,
 	});
 	if (p.isCancel(serverListenPort)) {
@@ -49,8 +49,8 @@ export const main = async (): Promise<void> => {
 	}
 
 	const desiredPeerCount = await textPrompt({
-		message: "Desired peer count",
-		defaultValue: String(persistedState?.desiredPeerCount ?? "1"),
+		message: "Peer count",
+		defaultValue: String(state?.desiredPeerCount ?? "1"),
 		validate: z.coerce.number().min(1).parse,
 	});
 	if (p.isCancel(desiredPeerCount)) {
@@ -58,8 +58,8 @@ export const main = async (): Promise<void> => {
 	}
 
 	const publicEndpoint = await textPrompt({
-		message: "Public Endpoint",
-		defaultValue: persistedState?.publicEndpoint ?? "192.168.1.1:51820",
+		message: "Public endpoint (host:port)",
+		defaultValue: state?.publicEndpoint ?? "192.168.1.1:51820",
 		validate: endpointParser,
 	});
 	if (p.isCancel(publicEndpoint)) {
@@ -67,8 +67,8 @@ export const main = async (): Promise<void> => {
 	}
 
 	const dns = await textPrompt({
-		message: "DNS",
-		defaultValue: persistedState?.dns ?? "1.1.1.1",
+		message: "DNS server",
+		defaultValue: state?.dns ?? "1.1.1.1",
 		validate: z.union([z.ipv4(), z.ipv6()]).parse,
 	});
 	if (p.isCancel(dns)) {
@@ -76,8 +76,8 @@ export const main = async (): Promise<void> => {
 	}
 
 	const allowedIps = await textPrompt({
-		message: "AllowedIPs",
-		defaultValue: persistedState?.allowedIps ?? "0.0.0.0/0",
+		message: "Allowed IPs (CIDR)",
+		defaultValue: state?.allowedIps ?? "0.0.0.0/0",
 		validate: z.cidrv4().parse,
 	});
 	if (p.isCancel(allowedIps)) {
@@ -126,7 +126,7 @@ export const main = async (): Promise<void> => {
 		};
 	});
 
-	await artifactPaths.cleanup();
+	await artifactPaths.resetOutputDirs();
 	await artifactPaths.writeRootKey(rootKeyText);
 	await artifactPaths.writeServerConfig(serverConfig.render());
 	await Promise.all(peers.map((peer) => artifactPaths.writePeerConfig(peer.name, peer.render.render())));

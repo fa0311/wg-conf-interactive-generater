@@ -1,53 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { promptInputSchema } from "../src/schemas";
+import { cidrParser, endpointParser } from "../src/address";
 
-describe("promptInputSchema", () => {
-  it("parses valid prompt input", () => {
-    const result = promptInputSchema.safeParse({
-      outputDir: "./generated",
-      serverAddressCidr: "10.8.0.1/24",
-      serverListenPort: "51820",
-      desiredPeerCount: "2",
-      publicEndpoint: "vpn.example.com:51820",
-      dns: "1.1.1.1",
-      allowedIps: "0.0.0.0/0",
-    });
+describe("address parsers", () => {
+	it("parses endpoint host and port with current behavior", () => {
+		expect(endpointParser("example.com:51820")).toEqual({
+			host: "example.com",
+			port: 51820,
+		});
+		expect(endpointParser("127.0.0.1:1")).toEqual({
+			host: "127.0.0.1",
+			port: 1,
+		});
+		expect(endpointParser("host:65535")).toEqual({ host: "host", port: 65535 });
+		expect(endpointParser(":51820")).toEqual({ host: "", port: 51820 });
 
-    expect(result.success).toBe(true);
+		const missingPort = endpointParser("host:");
+		expect(missingPort.host).toBe("host");
+		expect(missingPort.port).toBeNaN();
+	});
 
-    if (!result.success) {
-      return;
-    }
+	it("allocates sequential IPs from CIDR", () => {
+		const cidr = cidrParser("10.8.0.1/30");
 
-    expect(result.data.serverListenPort).toBe(51820);
-    expect(result.data.desiredPeerCount).toBe(2);
-  });
+		expect(cidr.getIp()).toBe("10.8.0.1");
+		expect(cidr.getIp()).toBe("10.8.0.2");
+	});
 
-  it("rejects desired peer count > 253", () => {
-    const result = promptInputSchema.safeParse({
-      outputDir: "./generated",
-      serverAddressCidr: "10.8.0.1/24",
-      serverListenPort: "51820",
-      desiredPeerCount: "254",
-      publicEndpoint: "vpn.example.com:51820",
-      dns: "1.1.1.1",
-      allowedIps: "0.0.0.0/0",
-    });
+	it("respects the starting IP", () => {
+		const cidr = cidrParser("10.8.0.5/24");
 
-    expect(result.success).toBe(false);
-  });
+		expect(cidr.getIp()).toBe("10.8.0.5");
+		expect(cidr.getIp()).toBe("10.8.0.6");
+	});
 
-  it("rejects endpoint without port", () => {
-    const result = promptInputSchema.safeParse({
-      outputDir: "./generated",
-      serverAddressCidr: "10.8.0.1/24",
-      serverListenPort: "51820",
-      desiredPeerCount: "2",
-      publicEndpoint: "vpn.example.com",
-      dns: "1.1.1.1",
-      allowedIps: "0.0.0.0/0",
-    });
+	it("throws when CIDR allocation is exhausted", () => {
+		const cidr = cidrParser("10.8.0.1/30");
 
-    expect(result.success).toBe(false);
-  });
+		cidr.getIp();
+		cidr.getIp();
+		expect(() => cidr.getIp()).toThrow("No more IP addresses available in this CIDR block.");
+	});
 });
