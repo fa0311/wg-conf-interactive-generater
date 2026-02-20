@@ -19,7 +19,7 @@ export const main = async (): Promise<void> => {
 		return;
 	}
 
-	const artifactPaths = await createArtifactPaths(outputDir);
+	const artifactPaths = createArtifactPaths(outputDir);
 
 	const persistedState = await (async () => {
 		try {
@@ -88,9 +88,7 @@ export const main = async (): Promise<void> => {
 		try {
 			return await artifactPaths.readRootKey();
 		} catch (_) {
-			const generated = generateRootKey();
-			await artifactPaths.writeRootKey(generated);
-			return generated;
+			return generateRootKey();
 		}
 	})();
 
@@ -128,8 +126,9 @@ export const main = async (): Promise<void> => {
 		};
 	});
 
+	await artifactPaths.cleanup();
+	await artifactPaths.writeRootKey(rootKeyText);
 	await artifactPaths.writeServerConfig(serverConfig.render());
-	await artifactPaths.setupPeerDir();
 	await Promise.all(peers.map((peer) => artifactPaths.writePeerConfig(peer.name, peer.render.render())));
 
 	await artifactPaths.writeState({

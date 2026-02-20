@@ -11,43 +11,41 @@ export const persistedStateSchema = z.object({
 	allowedIps: z.string(),
 });
 
-export const createArtifactPaths = async (outputDir: string) => {
+export const createArtifactPaths = (value: string) => {
+	const outputDir = path.join(value, "config");
 	const peerDir = path.join(outputDir, "peers");
-	const statePath = path.join(outputDir, "server.json");
-	const rootKeyPath = path.join(outputDir, "root.key");
+	const persistedDir = path.join(outputDir, "persisted");
+	const statePath = path.join(persistedDir, "server.json");
+	const rootKeyPath = path.join(persistedDir, "root.key");
 	const configPath = path.join(outputDir, "config.conf");
 
-	await fs.promises.mkdir(outputDir, { recursive: true });
-	
 	return {
-		writeServerConfig: async (content: string) => {
-			await fs.promises.writeFile(configPath, content, "utf8");
-			await fs.promises.chmod(configPath, 0o600);
+		cleanup: async () => {
+			await fs.promises.rm(outputDir, { recursive: true, force: true });
+			await fs.promises.mkdir(outputDir, { recursive: true, mode: 0o700 });
+			await fs.promises.mkdir(persistedDir, { recursive: true, mode: 0o700 });
+			await fs.promises.mkdir(peerDir, { recursive: true, mode: 0o700 });
 		},
-		setupPeerDir: async () => {
-			await fs.promises.rm(peerDir, { recursive: true, force: true });
-			await fs.promises.mkdir(peerDir, { recursive: true });
+		writeServerConfig: async (content: string) => {
+			await fs.promises.writeFile(configPath, content, { encoding: "utf8", mode: 0o600 });
 		},
 		writePeerConfig: async (peerName: string, content: string) => {
 			const peerConfigPath = path.join(peerDir, `${peerName}.conf`);
-			await fs.promises.writeFile(peerConfigPath, content, "utf8");
-			await fs.promises.chmod(peerConfigPath, 0o600);
+			await fs.promises.writeFile(peerConfigPath, content, { encoding: "utf8", mode: 0o600 });
 		},
 		writeState: async (content: z.infer<typeof persistedStateSchema>) => {
 			const data = JSON.stringify(content, null, 2);
-			await fs.promises.writeFile(statePath, data, "utf8");
-			await fs.promises.chmod(statePath, 0o600);
+			await fs.promises.writeFile(statePath, data, { encoding: "utf8", mode: 0o600 });
 		},
 		readState: async () => {
-			const data = await fs.promises.readFile(statePath, "utf8");
+			const data = await fs.promises.readFile(statePath, { encoding: "utf8" });
 			return JSON.parse(data);
 		},
 		writeRootKey: async (content: string) => {
-			await fs.promises.writeFile(rootKeyPath, content, "utf8");
-			await fs.promises.chmod(rootKeyPath, 0o600);
+			await fs.promises.writeFile(rootKeyPath, content, { encoding: "utf8", mode: 0o600 });
 		},
 		readRootKey: async () => {
-			return await fs.promises.readFile(rootKeyPath, "utf8");
+			return await fs.promises.readFile(rootKeyPath, { encoding: "utf8" });
 		},
 	};
 };
