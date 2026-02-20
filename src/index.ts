@@ -1,34 +1,30 @@
-import fs from "node:fs";
-import { cancel, intro, isCancel, outro } from "@clack/prompts";
+import * as p from "@clack/prompts";
 import pc from "picocolors";
 import z from "zod";
 import { cidrParser, endpointParser } from "./address.js";
-import { createArtifactPaths } from "./artifacts.js";
-import { generateRootKey, parseRootKey } from "./keys.js";
+import { createArtifactPaths, persistedStateSchema } from "./artifacts.js";
+import { encodeKey, generateRootKey, parseRootKey } from "./keys.js";
 import { textPrompt } from "./prompt.js";
 import { renderPeerConfig, renderServerConfig } from "./render.js";
-import { parsePersistedState } from "./state.js";
-
-const encodeKey = (value: Uint8Array): string => Buffer.from(value).toString("base64");
 
 export const main = async (): Promise<void> => {
-	intro(pc.cyan("wg-conf-wizard"));
+	p.intro(pc.cyan("wg-conf-wizard"));
 
 	const outputDir = await textPrompt({
 		message: "Output directory",
 		defaultValue: "./generated",
 		validate: z.string().min(1).parse,
 	});
-	if (isCancel(outputDir)) {
+	if (p.isCancel(outputDir)) {
 		return;
 	}
 
-	const statePath = createArtifactPaths(outputDir, 1).statePath;
+	const artifactPaths = await createArtifactPaths(outputDir);
+
 	const persistedState = await (async () => {
 		try {
-			const stateText = await fs.promises.readFile(statePath, "utf8");
-			const parsed = parsePersistedState(stateText);
-			return parsed;
+			const state = await artifactPaths.readState();
+			return persistedStateSchema.parse(state);
 		} catch (_) {
 			return undefined;
 		}
@@ -37,27 +33,27 @@ export const main = async (): Promise<void> => {
 	const serverAddressCidr = await textPrompt({
 		message: "Server Address CIDR",
 		defaultValue: persistedState?.serverAddressCidr ?? "10.8.0.1/24",
-		validate: z.cidrv4().parse,
+		validate: (e) => cidrParser(z.cidrv4().parse(e)),
 	});
-	if (isCancel(serverAddressCidr)) {
+	if (p.isCancel(serverAddressCidr)) {
 		return;
 	}
 
 	const serverListenPort = await textPrompt({
 		message: "Server ListenPort",
-		defaultValue: persistedState?.serverListenPort ?? "51820",
+		defaultValue: String(persistedState?.serverListenPort ?? "51820"),
 		validate: z.coerce.number().min(1).max(65535).parse,
 	});
-	if (isCancel(serverListenPort)) {
+	if (p.isCancel(serverListenPort)) {
 		return;
 	}
 
 	const desiredPeerCount = await textPrompt({
 		message: "Desired peer count",
-		defaultValue: persistedState?.desiredPeerCount ?? "1",
+		defaultValue: String(persistedState?.desiredPeerCount ?? "1"),
 		validate: z.coerce.number().min(1).parse,
 	});
-	if (isCancel(desiredPeerCount)) {
+	if (p.isCancel(desiredPeerCount)) {
 		return;
 	}
 
@@ -66,7 +62,7 @@ export const main = async (): Promise<void> => {
 		defaultValue: persistedState?.publicEndpoint ?? "192.168.1.1:51820",
 		validate: endpointParser,
 	});
-	if (isCancel(publicEndpoint)) {
+	if (p.isCancel(publicEndpoint)) {
 		return;
 	}
 
@@ -75,18 +71,77 @@ export const main = async (): Promise<void> => {
 		defaultValue: persistedState?.dns ?? "1.1.1.1",
 		validate: z.union([z.ipv4(), z.ipv6()]).parse,
 	});
-	if (isCancel(dns)) {
+	if (p.isCancel(dns)) {
 		return;
 	}
 
 	const allowedIps = await textPrompt({
 		message: "AllowedIPs",
 		defaultValue: persistedState?.allowedIps ?? "0.0.0.0/0",
-		validate: cidrParser,
+		validate: z.cidrv4().parse,
 	});
-	if (isCancel(allowedIps)) {
+	if (p.isCancel(allowedIps)) {
 		return;
 	}
+
+	const rootKeyText = await (async () => {
+		try {
+			return await artifactPaths.readRootKey();
+		} catch (_) {
+			const generated = generateRootKey();
+			await artifactPaths.writeRootKey(generated);
+			return generated;
+		}
+	})();
+
+	const rootKeyOps = parseRootKey(Buffer.from(rootKeyText, "base64"));
+
+	const serverKeys = rootKeyOps.deriveServerKeyPair();
+	const endpointText = `${publicEndpoint.host}:${publicEndpoint.port}`;
+	const serverConfig = renderServerConfig({
+		address: serverAddressCidr.getIp(),
+		listenPort: 51820,
+		privateKey: encodeKey(serverKeys.privateKey),
+	});
+
+	const peers = Array.from({ length: desiredPeerCount }, (_, i) => {
+		const keyMaterial = rootKeyOps.derivePeerKeyMaterial(i);
+		const presharedKey = rootKeyOps.derivePeerPresharedKey(i);
+		const ip = serverAddressCidr.getIp();
+		const name = `peer${i + 1}`;
+		serverConfig.add({
+			name: name,
+			publicKey: encodeKey(keyMaterial.publicKey),
+			presharedKey: encodeKey(presharedKey),
+			allowedIps: `${ip}/32`,
+		});
+		return {
+			name: name,
+			render: renderPeerConfig({
+				address: ip,
+				listenPort: serverListenPort,
+				privateKey: encodeKey(keyMaterial.privateKey),
+				publicKey: encodeKey(serverKeys.publicKey),
+				presharedKey: encodeKey(presharedKey),
+				allowedIps: allowedIps,
+			}),
+		};
+	});
+
+	await artifactPaths.writeServerConfig(serverConfig.render());
+	await artifactPaths.setupPeerDir();
+	await Promise.all(peers.map((peer) => artifactPaths.writePeerConfig(peer.name, peer.render.render())));
+
+	await artifactPaths.writeState({
+		serverAddressCidr: serverAddressCidr.value,
+		serverListenPort: serverListenPort,
+		desiredPeerCount: desiredPeerCount,
+		publicEndpoint: endpointText,
+		dns: dns,
+		allowedIps: allowedIps,
+	});
+
+	p.outro(pc.green("Done."));
 };
 
 await main();

@@ -1,60 +1,63 @@
 export interface ServerPeerInput {
-  name: string;
-  publicKey: string;
-  presharedKey: string;
-  allowedIps: string;
+	name: string;
+	publicKey: string;
+	presharedKey: string;
+	allowedIps: string;
 }
 
 export interface ServerConfigInput {
-  addressCidr: string;
-  listenPort: number;
-  privateKey: string;
-  peers: ReadonlyArray<ServerPeerInput>;
+	address: string;
+	listenPort: number;
+	privateKey: string;
 }
 
 export interface PeerConfigInput {
-  addressCidr: string;
-  listenPort: number;
-  privateKey: string;
-  dns: string;
-  serverPublicKey: string;
-  presharedKey: string;
-  endpoint: string;
-  allowedIps: string;
+	address: string;
+	listenPort: number;
+	privateKey: string;
+	publicKey: string;
+	presharedKey: string;
+	allowedIps: string;
 }
 
-export const renderServerConfig = (input: ServerConfigInput): string => {
-  const peerBlocks = input.peers.flatMap((peer) => [
-    "[Peer]",
-    `# ${peer.name}`,
-    `PublicKey = ${peer.publicKey}`,
-    `PresharedKey = ${peer.presharedKey}`,
-    `AllowedIPs = ${peer.allowedIps}`,
-    "",
-  ]);
+export const renderServerConfig = (input: ServerConfigInput) => {
+	const data = [
+		"[Interface]",
+		`Address = ${input.address}`,
+		`PrivateKey = ${input.privateKey}`,
+		`ListenPort = ${input.listenPort}`,
+		"", //
+	];
 
-  return [
-    "[Interface]",
-    `Address = ${input.addressCidr}`,
-    `ListenPort = ${input.listenPort}`,
-    `PrivateKey = ${input.privateKey}`,
-    "",
-    ...peerBlocks,
-  ].join("\n");
+	return {
+		add: (input: ServerPeerInput) => {
+			data.push(
+				"[Peer]",
+				`# ${input.name}`,
+				`PublicKey = ${input.publicKey}`,
+				`PresharedKey = ${input.presharedKey}`,
+				`AllowedIPs = ${input.allowedIps}`,
+				"",
+			);
+		},
+		render: () => data.join("\n"),
+	};
 };
 
-export const renderPeerConfig = (input: PeerConfigInput): string =>
-  [
-    "[Interface]",
-    `Address = ${input.addressCidr}`,
-    `ListenPort = ${input.listenPort}`,
-    `PrivateKey = ${input.privateKey}`,
-    `DNS = ${input.dns}`,
-    "",
-    "[Peer]",
-    `PublicKey = ${input.serverPublicKey}`,
-    `PresharedKey = ${input.presharedKey}`,
-    `Endpoint = ${input.endpoint}`,
-    `AllowedIPs = ${input.allowedIps}`,
-    "",
-  ].join("\n");
+export const renderPeerConfig = (input: PeerConfigInput) => {
+	const data = [
+		"[Interface]",
+		`Address = ${input.address}`,
+		`ListenPort = ${input.listenPort}`,
+		`PrivateKey = ${input.privateKey}`,
+		"",
+		"[Peer]",
+		`PublicKey = ${input.publicKey}`,
+		`PresharedKey = ${input.presharedKey}`,
+		`AllowedIPs = ${input.allowedIps}`,
+		"",
+	];
+	return {
+		render: () => data.join("\n"),
+	};
+};

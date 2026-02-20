@@ -1,44 +1,53 @@
+import fs from "node:fs";
 import path from "node:path";
+import z from "zod";
 
-export interface PeerPaths {
-  index: number;
-  name: string;
-  dir: string;
-  confPath: string;
-}
+export const persistedStateSchema = z.object({
+	serverAddressCidr: z.string(),
+	serverListenPort: z.number(),
+	desiredPeerCount: z.number(),
+	publicEndpoint: z.string(),
+	dns: z.string(),
+	allowedIps: z.string(),
+});
 
-export interface ArtifactPaths {
-  serverConfPath: string;
-  peersDir: string;
-  serverDir: string;
-  rootKeyPath: string;
-  statePath: string;
-  peers: ReadonlyArray<PeerPaths>;
-}
+export const createArtifactPaths = async (outputDir: string) => {
+	const peerDir = path.join(outputDir, "peers");
+	const statePath = path.join(outputDir, "server.json");
+	const rootKeyPath = path.join(outputDir, "root.key");
+	const configPath = path.join(outputDir, "config.conf");
 
-export const createArtifactPaths = (
-  outputDir: string,
-  desiredPeerCount: number,
-): ArtifactPaths => {
-  const peers = Array.from({ length: desiredPeerCount }, (_, offset) => {
-    const index = offset + 1;
-    const name = `peer${index}`;
-    const dir = path.join(outputDir, "peers", name);
-
-    return {
-      index,
-      name,
-      dir,
-      confPath: path.join(dir, `${name}.conf`),
-    };
-  });
-
-  return {
-    serverConfPath: path.join(outputDir, "server", "wg0.conf"),
-    peersDir: path.join(outputDir, "peers"),
-    serverDir: path.join(outputDir, "server"),
-    rootKeyPath: path.join(outputDir, "root.key"),
-    statePath: path.join(outputDir, "server.json"),
-    peers,
-  };
+	await fs.promises.mkdir(outputDir, { recursive: true });
+	
+	return {
+		writeServerConfig: async (content: string) => {
+			await fs.promises.writeFile(configPath, content, "utf8");
+			await fs.promises.chmod(configPath, 0o600);
+		},
+		setupPeerDir: async () => {
+			await fs.promises.rm(peerDir, { recursive: true, force: true });
+			await fs.promises.mkdir(peerDir, { recursive: true });
+		},
+		writePeerConfig: async (peerName: string, content: string) => {
+			const peerConfigPath = path.join(peerDir, `${peerName}.conf`);
+			await fs.promises.writeFile(peerConfigPath, content, "utf8");
+			await fs.promises.chmod(peerConfigPath, 0o600);
+		},
+		writeState: async (content: z.infer<typeof persistedStateSchema>) => {
+			const data = JSON.stringify(content, null, 2);
+			await fs.promises.writeFile(statePath, data, "utf8");
+			await fs.promises.chmod(statePath, 0o600);
+		},
+		readState: async () => {
+			const data = await fs.promises.readFile(statePath, "utf8");
+			return JSON.parse(data);
+		},
+		writeRootKey: async (content: string) => {
+			await fs.promises.writeFile(rootKeyPath, content, "utf8");
+			await fs.promises.chmod(rootKeyPath, 0o600);
+		},
+		readRootKey: async () => {
+			return await fs.promises.readFile(rootKeyPath, "utf8");
+		},
+	};
 };
