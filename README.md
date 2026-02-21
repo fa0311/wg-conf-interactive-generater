@@ -37,3 +37,20 @@ docker run --rm -it -v "$PWD/generated:/app/generated" ghcr.io/fa0311/wg-conf-in
 ```
 
 Default base output directory is `./generated`.
+
+## Output
+
+```
+<outputDir>/
+  config/
+    wg0.conf
+    peers/
+      peerN.conf
+    qr/
+      peerN.png
+    state/
+      root.key
+      server.json
+```
+
+`config/qr/peerN.png` contains a PNG QR code for each peer config.

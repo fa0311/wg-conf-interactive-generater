@@ -9,10 +9,18 @@ const fsMocks = vi.hoisted(() => ({
 	readFile: vi.fn(),
 }));
 
+const qrMocks = vi.hoisted(() => ({
+	toBuffer: vi.fn(),
+}));
+
 vi.mock("node:fs", () => ({
 	default: {
 		promises: fsMocks,
 	},
+}));
+
+vi.mock("qrcode", () => ({
+	toBuffer: qrMocks.toBuffer,
 }));
 
 const sampleState = {
@@ -38,21 +46,27 @@ describe("artifact outputs", () => {
 		const configDir = path.join(baseDir, "config");
 		const stateDir = path.join(configDir, "state");
 		const peersDir = path.join(configDir, "peers");
+		const qrDir = path.join(configDir, "qr");
 
 		expect(fsMocks.rm).toHaveBeenCalledTimes(1);
 		expect(fsMocks.rm).toHaveBeenCalledWith(configDir, { recursive: true, force: true });
-		expect(fsMocks.mkdir).toHaveBeenCalledTimes(3);
+		expect(fsMocks.mkdir).toHaveBeenCalledTimes(4);
 		expect(fsMocks.mkdir).toHaveBeenCalledWith(configDir, { recursive: true, mode: 0o700 });
 		expect(fsMocks.mkdir).toHaveBeenCalledWith(stateDir, { recursive: true, mode: 0o700 });
 		expect(fsMocks.mkdir).toHaveBeenCalledWith(peersDir, { recursive: true, mode: 0o700 });
+		expect(fsMocks.mkdir).toHaveBeenCalledWith(qrDir, { recursive: true, mode: 0o700 });
 	});
 
 	it("writes configs and state to expected paths", async () => {
 		const baseDir = "/tmp/wg-conf";
 		const artifacts = createArtifactPaths(baseDir);
+		const qrBuffer = Buffer.from("qr-data");
+
+		qrMocks.toBuffer.mockResolvedValue(qrBuffer);
 
 		await artifacts.writeServerConfig("server-config");
 		await artifacts.writePeerConfig("peer1", "peer-config");
+		await artifacts.writePeerQr("peer1", "peer-config");
 		await artifacts.writeRootKey("root-key");
 		await artifacts.writeState(sampleState);
 
@@ -68,6 +82,17 @@ describe("artifact outputs", () => {
 			"peer-config",
 			{
 				encoding: "utf8",
+				mode: 0o600,
+			},
+		);
+		expect(qrMocks.toBuffer).toHaveBeenCalledWith("peer-config", {
+			type: "png",
+			errorCorrectionLevel: "M",
+		});
+		expect(fsMocks.writeFile).toHaveBeenCalledWith(
+			path.join(configDir, "qr", "peer1.png"),
+			qrBuffer,
+			{
 				mode: 0o600,
 			},
 		);

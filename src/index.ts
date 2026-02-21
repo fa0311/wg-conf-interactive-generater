@@ -113,23 +113,29 @@ export const main = async (): Promise<void> => {
 			presharedKey: encodeKey(presharedKey),
 			allowedIps: `${ip}/32`,
 		});
+		const peerConfig = renderPeerConfig({
+			address: ip,
+			listenPort: serverListenPort,
+			privateKey: encodeKey(keyMaterial.privateKey),
+			publicKey: encodeKey(serverKeys.publicKey),
+			presharedKey: encodeKey(presharedKey),
+			allowedIps: allowedIps,
+		});
 		return {
 			name: name,
-			render: renderPeerConfig({
-				address: ip,
-				listenPort: serverListenPort,
-				privateKey: encodeKey(keyMaterial.privateKey),
-				publicKey: encodeKey(serverKeys.publicKey),
-				presharedKey: encodeKey(presharedKey),
-				allowedIps: allowedIps,
-			}),
+			configText: peerConfig.render(),
 		};
 	});
 
 	await artifactPaths.resetOutputDirs();
 	await artifactPaths.writeRootKey(rootKeyText);
 	await artifactPaths.writeServerConfig(serverConfig.render());
-	await Promise.all(peers.map((peer) => artifactPaths.writePeerConfig(peer.name, peer.render.render())));
+	await Promise.all(
+		peers.map(async (peer) => {
+			await artifactPaths.writePeerConfig(peer.name, peer.configText);
+			await artifactPaths.writePeerQr(peer.name, peer.configText);
+		}),
+	);
 
 	await artifactPaths.writeState({
 		serverAddressCidr: serverAddressCidr.value,
