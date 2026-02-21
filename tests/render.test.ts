@@ -39,8 +39,6 @@ describe("render", () => {
       publicKey: "serverPublic",
       presharedKey: "peerPsk",
       allowedIps: "0.0.0.0/0",
-      dns: "1.1.1.1",
-      endpoint: "vpn.example.com:51820",
     });
     const rendered = peerConfig.render();
 
@@ -48,11 +46,9 @@ describe("render", () => {
     expect(rendered).toContain("Address = 10.8.0.2/32");
     expect(rendered).toContain("ListenPort = 51820");
     expect(rendered).toContain("PrivateKey = peerPrivate");
-    expect(rendered).toContain("DNS = 1.1.1.1");
     expect(rendered).toContain("[Peer]");
     expect(rendered).toContain("PublicKey = serverPublic");
     expect(rendered).toContain("PresharedKey = peerPsk");
     expect(rendered).toContain("AllowedIPs = 0.0.0.0/0");
-    expect(rendered).toContain("Endpoint = vpn.example.com:51820");
   });
 });

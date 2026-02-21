@@ -1,58 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { generateRootKey, parseRootKey } from "../src/keys";
+import { generateKeypair, generatePresharedKey } from "../src/keys";
 
-const decodeRootKey = (value: string): Uint8Array =>
-  Buffer.from(value, "base64");
+const decodeB64 = (value: string): Uint8Array => Buffer.from(value, "base64");
 
 describe("keys", () => {
-  it("parses valid root key and returns operations", () => {
-    const rootKeyBytes = decodeRootKey(generateRootKey());
-    const ops = parseRootKey(rootKeyBytes);
+  it("generates 32-byte key material", () => {
+    const keypair = generateKeypair();
+    const presharedKey = generatePresharedKey();
 
-    expect(ops).toHaveProperty("deriveServerKeyPair");
-    expect(ops).toHaveProperty("derivePeerKeyMaterial");
-    expect(ops).toHaveProperty("derivePeerPresharedKey");
-    expect(ops).toHaveProperty("getRootKey");
+    expect(decodeB64(keypair.privateKey)).toHaveLength(32);
+    expect(decodeB64(keypair.publicKey)).toHaveLength(32);
+    expect(decodeB64(presharedKey)).toHaveLength(32);
   });
 
-  it("returns the same root key bytes from getRootKey", () => {
-    const rootKeyBytes = decodeRootKey(generateRootKey());
-    const ops = parseRootKey(rootKeyBytes);
+  it("derives deterministic public key from a provided private key", () => {
+    const seed = new Uint8Array(32);
+    seed[0] = 7;
+    seed[31] = 128;
+    const seedB64 = Buffer.from(seed).toString("base64");
 
-    expect(ops.getRootKey()).toEqual(rootKeyBytes);
-  });
+    const first = generateKeypair(seedB64);
+    const second = generateKeypair(seedB64);
 
-  it("derives deterministic key material", () => {
-    const rootKeyBytes = decodeRootKey(generateRootKey());
-    const first = parseRootKey(rootKeyBytes);
-    const second = parseRootKey(rootKeyBytes);
-
-    expect(first.deriveServerKeyPair()).toEqual(second.deriveServerKeyPair());
-    expect(first.derivePeerKeyMaterial(1)).toEqual(
-      second.derivePeerKeyMaterial(1),
-    );
-    expect(first.derivePeerPresharedKey(1)).toEqual(
-      second.derivePeerPresharedKey(1),
-    );
-  });
-
-  it("derives 32-byte key material", () => {
-    const rootKeyBytes = decodeRootKey(generateRootKey());
-    const ops = parseRootKey(rootKeyBytes);
-
-    const server = ops.deriveServerKeyPair();
-    const peer = ops.derivePeerKeyMaterial(1);
-    const presharedKey = ops.derivePeerPresharedKey(1);
-
-    expect(server.privateKey).toBeInstanceOf(Uint8Array);
-    expect(server.publicKey).toBeInstanceOf(Uint8Array);
-    expect(peer.privateKey).toBeInstanceOf(Uint8Array);
-    expect(peer.publicKey).toBeInstanceOf(Uint8Array);
-    expect(presharedKey).toBeInstanceOf(Uint8Array);
-    expect(server.privateKey).toHaveLength(32);
-    expect(server.publicKey).toHaveLength(32);
-    expect(peer.privateKey).toHaveLength(32);
-    expect(peer.publicKey).toHaveLength(32);
-    expect(presharedKey).toHaveLength(32);
+    expect(first.privateKey).toBe(seedB64);
+    expect(first.publicKey).toBe(second.publicKey);
   });
 });

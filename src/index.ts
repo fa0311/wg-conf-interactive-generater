@@ -1,10 +1,9 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import z from "zod";
-import { cidrParser, endpointParser } from "./address.js";
 import { createArtifactPaths, persistedStateSchema } from "./artifacts.js";
-import { encodeKey, generateRootKey, parseRootKey } from "./keys.js";
-import { textPrompt } from "./prompt.js";
+import { generateKeypair, generatePresharedKey } from "./keys.js";
+import { promptCommonSettings, textPrompt, toParsedCommonSettings } from "./prompt.js";
 import { renderPeerConfig, renderServerConfig } from "./render.js";
 
 export const main = async (): Promise<void> => {
@@ -30,121 +29,117 @@ export const main = async (): Promise<void> => {
 		}
 	})();
 
-	const serverAddressCidr = await textPrompt({
-		message: "Server address (CIDR)",
-		defaultValue: state?.serverAddressCidr ?? "10.8.0.1/24",
-		validate: (e) => cidrParser(z.cidrv4().parse(e)),
-	});
-	if (p.isCancel(serverAddressCidr)) {
-		return;
-	}
-
-	const serverListenPort = await textPrompt({
-		message: "Server listen port",
-		defaultValue: String(state?.serverListenPort ?? "51820"),
-		validate: z.coerce.number().min(1).max(65535).parse,
-	});
-	if (p.isCancel(serverListenPort)) {
-		return;
-	}
-
-	const desiredPeerCount = await textPrompt({
-		message: "Peer count",
-		defaultValue: String(state?.desiredPeerCount ?? "1"),
-		validate: z.coerce.number().min(1).parse,
-	});
-	if (p.isCancel(desiredPeerCount)) {
-		return;
-	}
-
-	const publicEndpoint = await textPrompt({
-		message: "Public endpoint (host:port)",
-		defaultValue: state?.publicEndpoint ?? "192.168.1.1:51820",
-		validate: endpointParser,
-	});
-	if (p.isCancel(publicEndpoint)) {
-		return;
-	}
-
-	const dns = await textPrompt({
-		message: "DNS server",
-		defaultValue: state?.dns ?? "1.1.1.1",
-		validate: z.union([z.ipv4(), z.ipv6()]).parse,
-	});
-	if (p.isCancel(dns)) {
-		return;
-	}
-
-	const allowedIps = await textPrompt({
-		message: "Allowed IPs (CIDR)",
-		defaultValue: state?.allowedIps ?? "0.0.0.0/0",
-		validate: z.cidrv4().parse,
-	});
-	if (p.isCancel(allowedIps)) {
-		return;
-	}
-
-	const rootKeyText = await (async () => {
-		try {
-			return await artifactPaths.readRootKey();
-		} catch (_) {
-			return generateRootKey();
+	const serverCommonSettings = await (async () => {
+		if (state) {
+			return toParsedCommonSettings(state);
+		} else {
+			return promptCommonSettings();
 		}
 	})();
+	if (!serverCommonSettings) {
+		return;
+	}
 
-	const rootKeyOps = parseRootKey(Buffer.from(rootKeyText, "base64"));
+	const { serverAddressCidr, publicEndpoint, serverListenPort, dns, allowedIps } = serverCommonSettings;
 
-	const serverKeys = rootKeyOps.deriveServerKeyPair();
+	const serverKeys = generateKeypair(state?.privateKey);
 	const endpointText = `${publicEndpoint.host}:${publicEndpoint.port}`;
 	const serverConfig = renderServerConfig({
 		address: serverAddressCidr.getIp(),
 		listenPort: 51820,
-		privateKey: encodeKey(serverKeys.privateKey),
+		privateKey: serverKeys.privateKey,
 	});
 
-	const peers = Array.from({ length: desiredPeerCount }, (_, i) => {
-		const keyMaterial = rootKeyOps.derivePeerKeyMaterial(i);
-		const presharedKey = rootKeyOps.derivePeerPresharedKey(i);
-		const ip = serverAddressCidr.getIp();
-		const name = `peer${i + 1}`;
-		serverConfig.add({
-			name: name,
-			publicKey: encodeKey(keyMaterial.publicKey),
-			presharedKey: encodeKey(presharedKey),
-			allowedIps: `${ip}/32`,
-		});
-		const peerConfig = renderPeerConfig({
-			address: ip,
-			listenPort: serverListenPort,
-			privateKey: encodeKey(keyMaterial.privateKey),
-			publicKey: encodeKey(serverKeys.publicKey),
-			presharedKey: encodeKey(presharedKey),
-			allowedIps: allowedIps,
-		});
-		return {
-			name: name,
-			configText: peerConfig.render(),
-		};
-	});
+	const peers = state?.peer ?? [];
 
+	for (const peer of peers) {
+		serverAddressCidr.addDisallowIp(peer.address);
+	}
 	await artifactPaths.resetOutputDirs();
-	await artifactPaths.writeRootKey(rootKeyText);
-	await artifactPaths.writeServerConfig(serverConfig.render());
-	await Promise.all(
-		peers.map(async (peer) => {
-			await artifactPaths.writePeerConfig(peer.name, peer.configText);
-			await artifactPaths.writePeerQr(peer.name, peer.configText);
-		}),
-	);
+
+	await (async () => {
+		while (true) {
+			const addPeer = await p.select({
+				options: [
+					{ value: "add", label: "Add peer" },
+					...(peers.length > 0 ? [{ value: "remove", label: "Remove peer" }] : []),
+					{ value: "done", label: "Done" },
+				],
+				message: "What do you want to do?",
+			});
+
+			if (p.isCancel(addPeer)) {
+				return;
+			} else if (addPeer === "done") {
+				return;
+			} else if (addPeer === "add") {
+				const peerName = await textPrompt({
+					message: "Peer name",
+					validate: z.string().min(1).parse,
+				});
+				if (p.isCancel(peerName)) {
+					continue;
+				}
+				const presharedKey = generatePresharedKey();
+				const peerKeypair = generateKeypair();
+
+				const address = serverAddressCidr.getIp();
+
+				peers.push({
+					address: address,
+					name: peerName,
+					publicKey: peerKeypair.publicKey,
+					presharedKey: presharedKey,
+				});
+
+				const peerConfig = renderPeerConfig({
+					address: address,
+					listenPort: serverListenPort,
+					privateKey: peerKeypair.privateKey,
+					publicKey: serverKeys.publicKey,
+					presharedKey: presharedKey,
+					allowedIps: allowedIps,
+				});
+				const configText = peerConfig.render();
+
+				await artifactPaths.writePeerConfig(peerName, configText);
+				await artifactPaths.writePeerQr(peerName, configText);
+
+				serverConfig.add({
+					name: peerName,
+					publicKey: peerKeypair.publicKey,
+					presharedKey: presharedKey,
+					allowedIps: `${address}/32`,
+				});
+			} else if (addPeer === "remove") {
+				const peerToRemove = await p.select({
+					options: [...peers.map((peer) => ({ value: peer.name, label: peer.name }))],
+					message: "Select a peer to remove",
+				});
+				if (p.isCancel(peerToRemove)) {
+					continue;
+				}
+				const index = peers.findIndex((peer) => peer.name === peerToRemove);
+				peers.splice(index, 1);
+			}
+		}
+	})();
 
 	await artifactPaths.writeState({
 		serverAddressCidr: serverAddressCidr.value,
 		serverListenPort: serverListenPort,
-		desiredPeerCount: desiredPeerCount,
 		publicEndpoint: endpointText,
 		dns: dns,
 		allowedIps: allowedIps,
+		privateKey: serverKeys.privateKey,
+		peer: peers.map((peer) => ({
+			name: peer.name,
+			address: peer.address,
+			publicKey: peer.publicKey,
+			presharedKey: peer.presharedKey,
+		})),
 	});
+	await artifactPaths.writeServerConfig(serverConfig.render());
 
 	p.outro(pc.green("Done."));
 };

@@ -6,34 +6,32 @@ import z from "zod";
 export const persistedStateSchema = z.object({
 	serverAddressCidr: z.string(),
 	serverListenPort: z.number(),
-	desiredPeerCount: z.number(),
 	publicEndpoint: z.string(),
 	dns: z.string(),
 	allowedIps: z.string(),
+	privateKey: z.string(),
+	peer: z.array(
+		z.object({
+			address: z.string(),
+			name: z.string(),
+			publicKey: z.string(),
+			presharedKey: z.string(),
+		}),
+	),
 });
 
 export const createArtifactPaths = (baseDir: string) => {
-	const configDir = path.join(baseDir, "config");
-	const peersDir = path.join(configDir, "peers");
-	const qrDir = path.join(configDir, "qr");
-	const stateDir = path.join(configDir, "state");
-	const statePath = path.join(stateDir, "server.json");
-	const rootKeyPath = path.join(stateDir, "root.key");
-	const serverConfigPath = path.join(configDir, "wg0.conf");
+	const peersDir = path.join(baseDir, "peers");
+	const statePath = path.join(baseDir, "server.json");
+	const serverConfigPath = path.join(baseDir, "wg0.conf");
 
 	return {
 		resetOutputDirs: async () => {
-			await fs.promises.rm(configDir, { recursive: true, force: true });
-			await fs.promises.mkdir(configDir, { recursive: true, mode: 0o700 });
-			await fs.promises.mkdir(stateDir, { recursive: true, mode: 0o700 });
+			await fs.promises.mkdir(baseDir, { recursive: true, mode: 0o700 });
 			await fs.promises.mkdir(peersDir, { recursive: true, mode: 0o700 });
-			await fs.promises.mkdir(qrDir, { recursive: true, mode: 0o700 });
 		},
 		writeServerConfig: async (content: string) => {
-			await fs.promises.writeFile(serverConfigPath, content, {
-				encoding: "utf8",
-				mode: 0o600,
-			});
+			await fs.promises.writeFile(serverConfigPath, content, { encoding: "utf8", mode: 0o600 });
 		},
 		writePeerConfig: async (peerName: string, content: string) => {
 			const peerConfigPath = path.join(peersDir, `${peerName}.conf`);
@@ -44,7 +42,7 @@ export const createArtifactPaths = (baseDir: string) => {
 				type: "png",
 				errorCorrectionLevel: "M",
 			});
-			const peerQrPath = path.join(qrDir, `${peerName}.png`);
+			const peerQrPath = path.join(peersDir, `${peerName}.png`);
 			await fs.promises.writeFile(peerQrPath, buffer, { mode: 0o600 });
 		},
 		writeState: async (content: z.infer<typeof persistedStateSchema>) => {
@@ -54,12 +52,6 @@ export const createArtifactPaths = (baseDir: string) => {
 		readState: async () => {
 			const data = await fs.promises.readFile(statePath, { encoding: "utf8" });
 			return JSON.parse(data);
-		},
-		writeRootKey: async (content: string) => {
-			await fs.promises.writeFile(rootKeyPath, content, { encoding: "utf8", mode: 0o600 });
-		},
-		readRootKey: async () => {
-			return await fs.promises.readFile(rootKeyPath, { encoding: "utf8" });
 		},
 	};
 };
