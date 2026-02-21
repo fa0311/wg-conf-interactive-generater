@@ -8,7 +8,7 @@ Interactive TypeScript CLI for generating WireGuard config files.
 - Node.js 20+
 - pnpm
 
-## Usage
+## Quickstart
 
 ```bash
 pnpm install
@@ -22,17 +22,18 @@ pnpm build
 node dist/index.js
 ```
 
-Generated files:
+## Docker usage
 
-- `<outputDir>/config/wg0.conf`
-- `<outputDir>/config/peers/peerN.conf`
-- `<outputDir>/config/state/root.key`
-- `<outputDir>/config/state/server.json`
-
-## Quality checks
+Pull the latest image:
 
 ```bash
-pnpm lint
-pnpm check
-pnpm test
+docker pull ghcr.io/fa0311/wg-conf-interactive-generater:latest
 ```
+
+Run interactively and persist generated files to `./generated` on the host:
+
+```bash
+docker run --rm -it -v "$PWD/generated:/app/generated" ghcr.io/fa0311/wg-conf-interactive-generater:latest
+```
+
+Default base output directory is `./generated`.
