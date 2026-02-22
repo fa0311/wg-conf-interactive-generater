@@ -4,12 +4,12 @@ import * as QRCode from "qrcode";
 import z from "zod";
 
 export const persistedStateSchema = z.object({
-	serverAddressCidr: z.string(),
+	internalSubnet: z.string(),
 	serverListenPort: z.number(),
 	publicEndpoint: z.string(),
-	dns: z.string(),
-	allowedIps: z.string(),
 	privateKey: z.string(),
+	postUp: z.string().optional(),
+	postDown: z.string().optional(),
 	peer: z.array(
 		z.object({
 			address: z.string(),
@@ -36,14 +36,18 @@ export const createArtifactPaths = (baseDir: string) => {
 		writePeerConfig: async (peerName: string, content: string) => {
 			const peerConfigPath = path.join(peersDir, `${peerName}.conf`);
 			await fs.promises.writeFile(peerConfigPath, content, { encoding: "utf8", mode: 0o600 });
-		},
-		writePeerQr: async (peerName: string, content: string) => {
 			const buffer = await QRCode.toBuffer(content, {
 				type: "png",
 				errorCorrectionLevel: "M",
 			});
 			const peerQrPath = path.join(peersDir, `${peerName}.png`);
 			await fs.promises.writeFile(peerQrPath, buffer, { mode: 0o600 });
+		},
+		removePeerConfig: async (peerName: string) => {
+			const peerConfigPath = path.join(peersDir, `${peerName}.conf`);
+			const peerQrPath = path.join(peersDir, `${peerName}.png`);
+			await fs.promises.rm(peerConfigPath, { force: true });
+			await fs.promises.rm(peerQrPath, { force: true });
 		},
 		writeState: async (content: z.infer<typeof persistedStateSchema>) => {
 			const data = JSON.stringify(content, null, 2);
